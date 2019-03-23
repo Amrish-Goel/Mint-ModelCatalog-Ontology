@@ -20,14 +20,18 @@ def create_error_file(error_dict):
 
 if __name__ == '__main__':
     mode = sys.argv[1]
-    # mode = "interactive"
+    # mode = "i"
     store = Graph()
     error_dict = dict()
     property_object_list = list()
-    wiki_variable_list = set()
+    wiki_variable_list = list()
+    wiki_data_dict = dict()
     ccut = "https://www.w3id.org/mint/ccut#"
+    owl = 'http://www.w3.org/2002/07/owl#'
     store.bind("ccut", ccut)
+    store.bind("owl", owl)
     ccut = Namespace(ccut)
+    owl = Namespace(owl)
     sparql = SPARQLWrapper("http://ontosoft.isi.edu:3030/ds/query")
     sparql.setQuery("""
     PREFIX mc: <https://w3id.org/mint/modelCatalog#>
@@ -78,7 +82,6 @@ where {
                             else:
                                 store.add((URIRef(result["u"]["value"]), URIRef(result["b"]["value"]),
                                            Literal(result["c"]["value"])))
-
     for property_object in property_object_list:
         sparql_query = """
         select  ?b ?c
@@ -97,19 +100,23 @@ where {
             predicate = property_result["b"]["value"]
             obj = str(property_result["c"]["value"])
 
-            if not predicate.endswith("subLabel"):
+            if not predicate.endswith("subLabel") and not predicate.endswith("comment"):
                 if predicate.endswith("hasUnits"):
                     obj1 = obj.replace("^", "")
                     obj = obj1
                     store.add((URIRef(subject), ccut.hasDimension, Literal(obj)))
                     continue
 
-                if predicate.endswith("hasAssociatedWikipediaPage"):
-                    obj1 = str(obj).split("wiki/", 1)[1]
-                    obj1 = obj1.lower()
-                    obj2 = obj1.replace("_", " ")
-                    obj2 = str(obj2).split("#",1)[0]
-                    wiki_variable_list.add(obj2)
+                if predicate.endswith("label"):
+                    obj1 = obj.replace("_", " ")
+                    wiki_data_dict[obj1] = subject
+
+                # if predicate.endswith("hasAssociatedWikipediaPage"):
+                #     obj1 = str(obj).split("wiki/", 1)[1]
+                #     obj1 = obj1.lower()
+                #     obj2 = obj1.replace("_", " ")
+                #     obj2 = str(obj2).split("#",1)[0]
+                #     wiki_variable_list.add(obj2)
 
                 if property_result["b"]["type"] == "uri":
                     if property_result["c"]["type"] == "uri":
@@ -118,10 +125,12 @@ where {
                     else:
                         store.add((URIRef(subject), URIRef(predicate),
                                    Literal(obj)))
+                        
+    wiki_variable_list = wiki_data_dict.keys()
     sparql = SPARQLWrapper("https://query.wikidata.org/sparql")
     for wiki_var in wiki_variable_list:
         sparql_query = """
-        select ?a ?c where {?a rdfs:label \"""" + wiki_var +"""\"@en. 
+        select ?a ?c where {?a rdfs:label \"""" + wiki_var +"""\"@en.
                             ?a schema:description ?c.
                            FILTER (lang(?c) = 'en')}
         """
@@ -137,7 +146,9 @@ where {
         if number_of_options == 1:
             for res in results2["results"]["bindings"]:
                 value = res['c']['value']
-                store.add((Literal(wiki_var), URIRef("https://schema.org/description"), Literal(value)))
+                subject = res['a']['value']
+                store.add((URIRef(wiki_data_dict[wiki_var]), owl.sameAs, URIRef(subject)))
+                store.add((URIRef(wiki_data_dict[wiki_var]), URIRef("https://schema.org/description"), Literal(value)))
 
         if mode == 'i':
             if number_of_options > 1:
@@ -167,7 +178,9 @@ where {
 
                 res = results2["results"]["bindings"][option - 1]
                 value = res['c']['value']
-                store.add((Literal(wiki_var), URIRef("https://schema.org/description"), Literal(value)))
+                subject = res['a']['value']
+                store.add((URIRef(wiki_data_dict[wiki_var]), owl.sameAs, URIRef(subject)))
+                store.add((URIRef(wiki_data_dict[wiki_var]), URIRef("https://schema.org/description"), Literal(value)))
 
 
     create_turtle_file(store)
